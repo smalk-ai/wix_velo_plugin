@@ -2,28 +2,26 @@
 
 Complete GEO (Generative Engine Optimization) integration for Wix using Velo.
 
-## Features
+## Why Server-Side?
 
-### 1. 🌐 JavaScript Tracker (Frontend Analytics)
-Client-side tracking for browser-based visitors via the Smalk tracker script.
+**AI Agents (ChatGPT, Claude, Perplexity, Google AIO, etc.) do not execute JavaScript.**
 
-### 2. 🖥️ Server-Side Tracking (AI Bot Detection)
-Track ALL page visits server-side to detect AI bots that don't execute JavaScript:
-- ChatGPT, Claude, Perplexity
-- Google AIO, Bing AI
-- AI crawlers and scrapers
+This means:
+- ❌ Traditional JavaScript analytics → **invisible to AI Agents**
+- ❌ Client-side ad injection → **never displayed to AI Agents**
 
-**Critical:** Without server-side tracking, you'll miss 70-90% of AI bot traffic!
+Smalk solves this with:
+- ✅ **Server-side tracking** - Detects ALL visitors including AI Agents
+- ✅ **Server-side ad fetching** - Get ad content via Velo backend
 
-### 3. 📊 AI Search Ads
-Display contextual ads for AI-driven traffic using `<div smalk-ads>` elements in HTML components.
+**Result:** Publishers can finally monetize AI Agent traffic.
 
 ## Requirements
 
 - Wix site with Velo enabled
-- Smalk account with API credentials
+- Smalk account ([app.smalk.ai](https://app.smalk.ai))
 
-## Setup
+## Installation
 
 ### Step 1: Enable Velo
 
@@ -31,98 +29,83 @@ Display contextual ads for AI-driven traffic using `<div smalk-ads>` elements in
 2. Click **Dev Mode** in the top bar
 3. Click **Turn on Dev Mode**
 
-### Step 2: Add Secrets
-
-Store your API credentials securely:
+### Step 2: Add Your API Keys
 
 1. Go to **Secrets Manager** (Settings → Secrets Manager)
-2. Add these two secrets:
+2. Add these secrets:
 
 | Secret Name | Value |
 |-------------|-------|
-| `SMALK_PROJECT_KEY` | Your project UUID (from Dashboard → Integrations) |
-| `SMALK_API_KEY` | Your API key (from Dashboard → Settings → API Keys) |
+| `SMALK_PROJECT_KEY` | Your project UUID (Dashboard → Integrations) |
+| `SMALK_API_KEY` | Your API key (Dashboard → Settings → API Keys) |
 
-### Step 3: Create Backend Module
+### Step 3: Add Backend Module
 
 1. In Velo sidebar, click **Backend** (folder icon)
 2. Create a new file: `smalk.jsw`
 3. Copy the contents from `backend/smalk.jsw` in this package
 
-### Step 4: Add Page Code
+### Step 4: Add Tracking to Pages
 
-Add tracking to your pages:
+Add this code to your pages:
+
+```javascript
+import wixLocationFrontend from 'wix-location-frontend';
+import { trackPageView } from 'backend/smalk';
+
+$w.onReady(function () {
+  // Server-side tracking (detects AI Agents)
+  trackPageView({
+    path: wixLocationFrontend.path,
+    referrer: wixLocationFrontend.referrer,
+  });
+});
+```
+
+**That's it!** Your site is now tracking AI Agents.
+
+### Step 5: Add Ad Placements (Optional)
+
+To display ads, fetch ad content via the backend and display it in a Text or HTML element:
 
 ```javascript
 import wixLocationFrontend from 'wix-location-frontend';
 import { trackPageView, getAdContent } from 'backend/smalk';
 
 $w.onReady(async function () {
-  // Server-side tracking (CRITICAL for AI bot detection)
+  // Server-side tracking
   trackPageView({
     path: wixLocationFrontend.path,
     referrer: wixLocationFrontend.referrer,
   });
 
-  // Load ads if using HTML components
+  // Fetch and display ad
   const adHtml = await getAdContent(wixLocationFrontend.url, 'sidebar-ad');
   if (adHtml) {
-    $w('#sidebarAdContainer').postMessage(adHtml);
+    $w('#adText').html = adHtml;  // Use a Rich Text element
   }
 });
 ```
 
-### Step 5: Create Ad Containers (Optional)
-
-For displaying ads, create HTML iframe components:
-
-1. Add an **HTML iframe** element
-2. Set the element ID (e.g., `#sidebarAdContainer`)
-3. Use this HTML:
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; }
-    [smalk-ads]:empty { display: none; }
-  </style>
-</head>
-<body>
-  <div smalk-ads></div>
-  <script>
-    const adContainer = document.querySelector('[smalk-ads]');
-    window.onmessage = (event) => {
-      if (event.data && typeof event.data === 'string') {
-        adContainer.innerHTML = event.data;
-      }
-    };
-  </script>
-</body>
-</html>
-```
+**Setup:**
+1. Add a **Rich Text** element to your page
+2. Set its ID (e.g., `#adText`)
+3. The ad content will be injected when the page loads
 
 ## How It Works
 
 ```
 ┌─────────────────────────────────────────────────┐
-│            Visitor requests page                 │
+│              Visitor loads page                  │
+│         (Human browser OR AI Agent)              │
 └──────────────────────┬──────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────┐
 │            $w.onReady()                          │
 │                                                  │
-│  1. trackPageView() → Smalk API                  │
-│     (detects AI bots server-side)               │
-│                                                  │
-│  2. getAdContent() → Smalk API                   │
-│     (fetches contextual ad HTML)                │
-│                                                  │
-│  3. postMessage() → HTML iframe                  │
-│     (displays ad content)                       │
+│   trackPageView() → Smalk API (via Velo backend) │
+│   (detects AI Agents server-side)                │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -150,40 +133,36 @@ const adHtml = await getAdContent(
 );
 ```
 
-### `getTrackerScript()`
-
-Get the JavaScript tracker script tag.
-
-```javascript
-const script = await getTrackerScript();
-// <script src="https://api.smalk.ai/tracker.js?PROJECT_KEY=xxx" async></script>
-```
-
 ### `checkConfiguration()`
 
 Verify your setup is correct.
 
 ```javascript
+import { checkConfiguration } from 'backend/smalk';
+
 const status = await checkConfiguration();
+console.log(status);
 // { hasProjectKey: true, hasApiKey: true, isConfigured: true }
 ```
 
-## Ad Placement HTML
+## File Structure
 
-Use the `smalk-ads` attribute:
-
-```html
-<div smalk-ads></div>
-<div smalk-ads id="header-ad"></div>
+```
+your-wix-site/
+├── backend/
+│   └── smalk.jsw          # Backend module (copy from this package)
+└── pages/
+    └── your-page.js       # Add trackPageView() call
 ```
 
 ## Troubleshooting
 
 ### Tracking Not Working
 
-1. **Check Secrets**: Verify `SMALK_API_KEY` is set
-2. **Publish site**: Backend code only works on published sites
+1. **Check Secrets**: Verify `SMALK_API_KEY` is set in Secrets Manager
+2. **Publish your site**: Backend code only works on published sites
 3. **Test configuration**:
+
 ```javascript
 import { checkConfiguration } from 'backend/smalk';
 const status = await checkConfiguration();
@@ -192,19 +171,9 @@ console.log(status);
 
 ### Ads Not Appearing
 
-1. **Check Secrets**: Both `SMALK_PROJECT_KEY` and `SMALK_API_KEY` needed
-2. **Check HTML component**: Ensure postMessage is working
-3. **Check ad availability**: You may not have active campaigns
-
-## File Structure
-
-```
-your-wix-site/
-├── backend/
-│   └── smalk.jsw          # Backend module
-└── pages/
-    └── your-page.js       # Page code with tracking
-```
+1. **Check Secrets**: Both `SMALK_PROJECT_KEY` and `SMALK_API_KEY` must be set
+2. **Check element ID**: Make sure the Rich Text element ID matches your code
+3. **Check ad availability**: You may not have active campaigns in your Smalk dashboard
 
 ## Support
 

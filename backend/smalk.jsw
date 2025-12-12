@@ -1,9 +1,15 @@
 /**
  * Smalk - Complete GEO Integration for Wix
  * 
+ * WHY SERVER-SIDE?
+ * AI Agents (ChatGPT, Claude, Perplexity, etc.) do NOT execute JavaScript.
+ * Traditional JS analytics and ads are invisible to them.
+ * 
  * This backend module provides:
- * 1. Server-side tracking for AI bot detection
- * 2. Ad content fetching for AI Search Ads
+ * 1. Server-side tracking - Detects ALL visitors including AI Agents
+ * 2. Ad content fetching - Get ad content for server-side display
+ * 
+ * Result: Publishers can finally monetize AI Agent traffic.
  * 
  * Runs on Wix servers, keeping your API credentials secure.
  * 
@@ -28,7 +34,7 @@ const API_TIMEOUT = 150; // 150ms timeout for tracking (non-blocking)
 /**
  * Track a page visit server-side.
  * 
- * This is CRITICAL for detecting AI bots that don't execute JavaScript:
+ * This is CRITICAL for detecting AI Agents that don't execute JavaScript:
  * - ChatGPT, Claude, Perplexity
  * - Google AIO, Bing AI
  * - AI crawlers and scrapers
