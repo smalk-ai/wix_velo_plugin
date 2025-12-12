@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        font-size: 16px;
+        line-height: 1.5;
+        color: #333;
+        background: transparent;
+      }
+
+      /* Ad container using smalk-ads attribute */
+      [smalk-ads] {
+        width: 100%;
+        min-height: 20px;
+      }
+
+      /* Hide if empty (no ad content) */
+      [smalk-ads]:empty {
+        display: none;
+      }
+
+      /* Ensure images are responsive */
+      [smalk-ads] img {
+        max-width: 100%;
+        height: auto;
+      }
+
+      /* Link styling */
+      [smalk-ads] a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      [smalk-ads] a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Smalk Ad Container -->
+    <div smalk-ads></div>
+
+    <script>
+      (function () {
+        "use strict";
+
+        const adContainer = document.querySelector("[smalk-ads]");
+
+        // Listen for messages from Wix page code
+        window.onmessage = function (event) {
+          if (!event.data) return;
+
+          try {
+            // Handle string messages (ad HTML content)
+            if (typeof event.data === "string") {
+              injectAdContent(event.data);
+              return;
+            }
+
+            // Handle object messages (commands)
+            if (typeof event.data === "object") {
+              if (event.data.type === "setContent" && event.data.html) {
+                injectAdContent(event.data.html);
+              } else if (event.data.type === "clear") {
+                adContainer.innerHTML = "";
+                notifyHeight();
+              }
+            }
+          } catch (error) {
+            console.error("Smalk Ad Container error:", error);
+          }
+        };
+
+        /**
+         * Inject ad HTML content into the container
+         */
+        function injectAdContent(html) {
+          if (!html || typeof html !== "string") {
+            return;
+          }
+
+          adContainer.innerHTML = html;
+          notifyHeight();
+
+          // Watch for images loading (may change height)
+          const images = adContainer.querySelectorAll("img");
+          images.forEach((img) => {
+            img.addEventListener("load", notifyHeight);
+            img.addEventListener("error", notifyHeight);
+          });
+        }
+
+        /**
+         * Notify parent window of content height for auto-resize
+         */
+        function notifyHeight() {
+          requestAnimationFrame(() => {
+            const height = document.body.scrollHeight;
+            window.parent.postMessage(
+              {
+                type: "setHeight",
+                height: height,
+              },
+              "*"
+            );
+          });
+        }
+
+        // Initial height notification
+        notifyHeight();
+
+        // Notify when DOM changes
+        if (typeof MutationObserver !== "undefined") {
+          const observer = new MutationObserver(notifyHeight);
+          observer.observe(adContainer, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>

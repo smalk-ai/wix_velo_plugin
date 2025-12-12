@@ -1,0 +1,314 @@
+/**
+ * Smalk - Complete GEO Integration for Wix
+ * 
+ * This backend module provides:
+ * 1. Server-side tracking for AI bot detection
+ * 2. Ad content fetching for AI Search Ads
+ * 
+ * Runs on Wix servers, keeping your API credentials secure.
+ * 
+ * @module backend/smalk
+ */
+
+import { fetch } from 'wix-fetch';
+import { getSecret } from 'wix-secrets-backend';
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
+
+const TRACKING_API_URL = 'https://api.smalk.ai/api/v1/tracking/visit';
+const ADS_API_URL = 'https://api.smalk.ai/api/v1/transform/ads/content/';
+const API_TIMEOUT = 150; // 150ms timeout for tracking (non-blocking)
+
+// =============================================================================
+// TRACKING FUNCTIONS
+// =============================================================================
+
+/**
+ * Track a page visit server-side.
+ * 
+ * This is CRITICAL for detecting AI bots that don't execute JavaScript:
+ * - ChatGPT, Claude, Perplexity
+ * - Google AIO, Bing AI
+ * - AI crawlers and scrapers
+ * 
+ * Should be called on every page load, ideally in $w.onReady() or router hooks.
+ * 
+ * @param {string} requestPath - Page path (e.g., '/products/widget')
+ * @param {string} requestMethod - HTTP method (usually 'GET')
+ * @param {Object} [options] - Additional tracking options
+ * @param {string} [options.userAgent] - Visitor's user agent
+ * @param {string} [options.referer] - Referrer URL
+ * @param {string} [options.clientIp] - Client IP (if available)
+ * @returns {Promise<boolean>} True if tracking succeeded
+ * 
+ * @example
+ * // In page code
+ * import { trackVisit } from 'backend/smalkAds';
+ * 
+ * $w.onReady(async () => {
+ *   await trackVisit(wixLocationFrontend.path, 'GET');
+ * });
+ */
+export async function trackVisit(requestPath, requestMethod = 'GET', options = {}) {
+  try {
+    // Get API key from Secrets Manager
+    const apiKey = await getSecret('SMALK_API_KEY');
+    
+    if (!apiKey) {
+      console.error('Smalk Tracking: Missing SMALK_API_KEY in Secrets Manager.');
+      return false;
+    }
+
+    // Build tracking payload with ONLY required/recommended headers
+    // IMPORTANT: Do NOT include cookies, auth tokens, or sensitive data
+    const payload = {
+      request_path: requestPath,
+      request_method: requestMethod,
+      request_headers: {
+        // Required: User-Agent for bot detection
+        'User-Agent': options.userAgent || '',
+        // Recommended: Client IP for geographic analytics
+        'X-Real-IP': options.clientIp || '',
+        // Recommended: Referer for traffic source tracking
+        'Referer': options.referer || '',
+      },
+    };
+
+    // Make async tracking request (fire-and-forget)
+    const response = await fetch(TRACKING_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Api-Key ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    return response.ok;
+
+  } catch (error) {
+    // Graceful degradation - never break the page
+    console.error('Smalk Tracking error:', error.message || error);
+    return false;
+  }
+}
+
+/**
+ * Track a page visit with enhanced context from Wix APIs.
+ * 
+ * Automatically extracts available context from Wix environment.
+ * 
+ * @param {Object} context - Wix context object
+ * @param {string} context.path - Current page path
+ * @param {string} [context.referrer] - Referrer URL
+ * @returns {Promise<boolean>} True if tracking succeeded
+ * 
+ * @example
+ * // In site-level code or router
+ * import { trackPageView } from 'backend/smalkAds';
+ * import wixLocationFrontend from 'wix-location-frontend';
+ * 
+ * trackPageView({
+ *   path: wixLocationFrontend.path,
+ *   referrer: wixLocationFrontend.referrer
+ * });
+ */
+export async function trackPageView(context) {
+  return trackVisit(
+    context.path || '/',
+    'GET',
+    {
+      referer: context.referrer || '',
+      userAgent: '', // Wix doesn't expose user agent server-side
+    }
+  );
+}
+
+// =============================================================================
+// ADS FUNCTIONS
+// =============================================================================
+
+/**
+ * Fetch ad content from Smalk API for a single placement.
+ * 
+ * @param {string} pageUrl - Full URL of the current page
+ * @param {string} [selectorId] - Optional unique placement ID (e.g., 'header-ad')
+ * @param {string} [userAgent] - Visitor's user agent string
+ * @param {string} [referer] - Referrer URL
+ * @returns {Promise<string|null>} Ad HTML content, or null if no ad available
+ * 
+ * @example
+ * // Basic usage
+ * const adHtml = await getAdContent('https://mysite.com/page', 'sidebar-ad');
+ * 
+ * @example
+ * // With all parameters
+ * const adHtml = await getAdContent(
+ *   'https://mysite.com/blog/my-post',
+ *   'blog-content-ad',
+ *   'Mozilla/5.0...',
+ *   'https://google.com'
+ * );
+ */
+export async function getAdContent(pageUrl, selectorId, userAgent, referer) {
+  try {
+    // Get API credentials from Wix Secrets Manager
+    const projectKey = await getSecret('SMALK_PROJECT_KEY');
+    const apiKey = await getSecret('SMALK_API_KEY');
+
+    if (!projectKey || !apiKey) {
+      console.error('Smalk Ads: Missing API credentials. Add SMALK_PROJECT_KEY and SMALK_API_KEY to Secrets Manager.');
+      return null;
+    }
+
+    // Build request payload (matches JavaScript tracker format)
+    const payload = {
+      project_key: projectKey,
+      page_url: pageUrl,
+      current_url: pageUrl,
+      user_agent: userAgent || '',
+      referer: referer || '',
+      timestamp: new Date().toISOString(),
+    };
+
+    // Add selector_id if provided
+    if (selectorId) {
+      payload.selector_id = selectorId;
+    }
+
+    // Make API request
+    const response = await fetch(ADS_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Api-Key ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    // Handle response
+    if (response.ok) {
+      const data = await response.json();
+      return data.html || null;
+    }
+
+    // 204 No Content = no ad available for this placement
+    if (response.status === 204) {
+      return null;
+    }
+
+    // Log error for debugging
+    console.warn(`Smalk Ads: API returned ${response.status}`);
+    return null;
+
+  } catch (error) {
+    // Graceful degradation - don't break the page if API fails
+    console.error('Smalk Ads error:', error.message || error);
+    return null;
+  }
+}
+
+/**
+ * Fetch ads for multiple placements in parallel.
+ * 
+ * More efficient than calling getAdContent multiple times sequentially.
+ * 
+ * @param {string} pageUrl - Full URL of the current page
+ * @param {string[]} selectorIds - Array of placement IDs
+ * @param {string} [userAgent] - Visitor's user agent string
+ * @returns {Promise<Object>} Map of selectorId to HTML content
+ * 
+ * @example
+ * const ads = await getMultipleAds(
+ *   'https://mysite.com/page',
+ *   ['header-ad', 'sidebar-ad', 'footer-ad']
+ * );
+ * 
+ * // Result: { 'header-ad': '<div>...</div>', 'sidebar-ad': null, 'footer-ad': '<div>...</div>' }
+ */
+export async function getMultipleAds(pageUrl, selectorIds, userAgent) {
+  const results = {};
+
+  if (!Array.isArray(selectorIds) || selectorIds.length === 0) {
+    return results;
+  }
+
+  // Fetch all ads in parallel for better performance
+  const promises = selectorIds.map(async (id) => {
+    try {
+      const html = await getAdContent(pageUrl, id, userAgent, '');
+      results[id] = html;
+    } catch (error) {
+      results[id] = null;
+    }
+  });
+
+  await Promise.all(promises);
+  return results;
+}
+
+// =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
+
+/**
+ * Get the tracker script tag for manual injection.
+ * 
+ * Returns the HTML script tag that should be added to pages
+ * for frontend JavaScript tracking.
+ * 
+ * @returns {Promise<string|null>} Script tag HTML, or null if not configured
+ * 
+ * @example
+ * const scriptTag = await getTrackerScript();
+ * // <script src="https://api.smalk.ai/tracker.js?PROJECT_KEY=xxx" async></script>
+ */
+export async function getTrackerScript() {
+  try {
+    const projectKey = await getSecret('SMALK_PROJECT_KEY');
+    
+    if (!projectKey) {
+      console.error('Smalk: Missing SMALK_PROJECT_KEY in Secrets Manager.');
+      return null;
+    }
+
+    return `<script src="https://api.smalk.ai/tracker.js?PROJECT_KEY=${projectKey}" async></script>`;
+  } catch (error) {
+    console.error('Smalk error:', error.message || error);
+    return null;
+  }
+}
+
+/**
+ * Check if Smalk is properly configured.
+ * 
+ * Useful for debugging - call this to verify your setup.
+ * 
+ * @returns {Promise<Object>} Configuration status
+ * 
+ * @example
+ * const status = await checkConfiguration();
+ * console.log(status);
+ * // { hasProjectKey: true, hasApiKey: true, isConfigured: true }
+ */
+export async function checkConfiguration() {
+  try {
+    const projectKey = await getSecret('SMALK_PROJECT_KEY');
+    const apiKey = await getSecret('SMALK_API_KEY');
+
+    return {
+      hasProjectKey: !!projectKey,
+      hasApiKey: !!apiKey,
+      isConfigured: !!(projectKey && apiKey),
+    };
+  } catch (error) {
+    return {
+      hasProjectKey: false,
+      hasApiKey: false,
+      isConfigured: false,
+      error: error.message,
+    };
+  }
+}
