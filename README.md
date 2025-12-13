@@ -12,7 +12,7 @@ This means:
 
 Smalk solves this with:
 - ✅ **Server-side tracking** - Detects ALL visitors including AI Agents
-- ✅ **Server-side ad fetching** - Get ad content via Velo backend
+- ✅ **Server-side ad fetching** - Get ad content for display
 
 **Result:** Publishers can finally monetize AI Agent traffic.
 
@@ -29,15 +29,16 @@ Smalk solves this with:
 2. Click **Dev Mode** in the top bar
 3. Click **Turn on Dev Mode**
 
-### Step 2: Add Your API Keys
+### Step 2: Add Your API Key
 
 1. Go to **Secrets Manager** (Settings → Secrets Manager)
-2. Add these secrets:
+2. Add this secret:
 
 | Secret Name | Value |
 |-------------|-------|
-| `SMALK_PROJECT_KEY` | Your project UUID (Dashboard → Integrations) |
 | `SMALK_API_KEY` | Your API key (Dashboard → Settings → API Keys) |
+
+**That's it!** The workspace info (project key, publisher status) is fetched automatically.
 
 ### Step 3: Add Backend Module
 
@@ -54,43 +55,41 @@ import wixLocationFrontend from 'wix-location-frontend';
 import { trackPageView } from 'backend/smalk';
 
 $w.onReady(function () {
-  // Server-side tracking (detects AI Agents)
+  // Server-side tracking (fire-and-forget, non-blocking)
   trackPageView({
     path: wixLocationFrontend.path,
     referrer: wixLocationFrontend.referrer,
   });
+  // No await needed - runs in background without blocking page load
 });
 ```
 
-**That's it!** Your site is now tracking AI Agents.
+**Your site is now tracking AI Agents!**
 
 ### Step 5: Add Ad Placements (Optional)
 
-To display ads, fetch ad content via the backend and display it in a Text or HTML element:
+To display ads, fetch ad content via the backend and display it in a Text element:
 
 ```javascript
 import wixLocationFrontend from 'wix-location-frontend';
 import { trackPageView, getAdContent } from 'backend/smalk';
 
 $w.onReady(async function () {
-  // Server-side tracking
+  // Tracking (fire-and-forget, non-blocking)
   trackPageView({
     path: wixLocationFrontend.path,
     referrer: wixLocationFrontend.referrer,
   });
 
-  // Fetch and display ad
+  // Ads (must await - we need the response)
   const adHtml = await getAdContent(wixLocationFrontend.url, 'sidebar-ad');
   if (adHtml) {
-    $w('#adText').html = adHtml;  // Use a Rich Text element
+    $w('#adText').html = adHtml;
   }
 });
 ```
 
-**Setup:**
-1. Add a **Rich Text** element to your page
-2. Set its ID (e.g., `#adText`)
-3. The ad content will be injected when the page loads
+**Note:** Ads are only available if Publisher is activated in your Smalk workspace.
 
 ## How It Works
 
@@ -124,13 +123,22 @@ trackPageView({
 
 ### `getAdContent(pageUrl, selectorId)`
 
-Fetch ad content for a placement.
+Fetch ad content for a placement. Returns `null` if publisher not activated.
 
 ```javascript
 const adHtml = await getAdContent(
   'https://mysite.com/blog/post',
   'sidebar-ad'
 );
+```
+
+### `getWorkspaceInfo()`
+
+Get workspace information (cached after first call).
+
+```javascript
+const info = await getWorkspaceInfo();
+// { projectKey: '...', name: 'My Workspace', publisherActivated: true }
 ```
 
 ### `checkConfiguration()`
@@ -142,7 +150,7 @@ import { checkConfiguration } from 'backend/smalk';
 
 const status = await checkConfiguration();
 console.log(status);
-// { hasProjectKey: true, hasApiKey: true, isConfigured: true }
+// { hasApiKey: true, isConfigured: true, workspaceName: 'My Site', publisherActivated: true }
 ```
 
 ## File Structure
@@ -171,9 +179,9 @@ console.log(status);
 
 ### Ads Not Appearing
 
-1. **Check Secrets**: Both `SMALK_PROJECT_KEY` and `SMALK_API_KEY` must be set
-2. **Check element ID**: Make sure the Rich Text element ID matches your code
-3. **Check ad availability**: You may not have active campaigns in your Smalk dashboard
+1. **Check Publisher status**: Run `checkConfiguration()` and verify `publisherActivated: true`
+2. **Activate Publisher**: Go to your Smalk Dashboard to activate the Publisher feature
+3. **Check element ID**: Make sure the Rich Text element ID matches your code
 
 ## Support
 
