@@ -74,11 +74,12 @@ export async function getWorkspaceInfo() {
     const data = await response.json();
     
     // API returns an array, get the first project
+    // According to API: /api/v1/projects/ returns a list (array with 1 item when using API key)
     if (Array.isArray(data) && data.length > 0) {
       cachedWorkspaceInfo = {
-        projectKey: data[0].key,
+        projectKey: data[0].id, // Project ID (UUID) is used as the workspace/project key
         name: data[0].name,
-        publisherActivated: data[0].publisher_activated ?? false,
+        publisherActivated: data[0].publisher_ads_enabled ?? false,
         // Add other relevant fields as needed
       };
       return cachedWorkspaceInfo;
@@ -219,7 +220,16 @@ export async function getAdContent(pageUrl, selectorId) {
 
     if (response.ok) {
       const data = await response.json();
-      return data.html || null;
+      // Check for 'html' key first (standard), then 'htm' as fallback
+      const htmlContent = data.html || data.htm || null;
+      
+      // Return null if content is empty string - this ensures div is not replaced
+      // when API responds with {"html": ""} or {"htm": ""}
+      if (htmlContent === '' || htmlContent === null) {
+        return null;
+      }
+      
+      return htmlContent;
     }
 
     return null;
